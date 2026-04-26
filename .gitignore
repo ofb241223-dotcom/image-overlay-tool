@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.venv/
+.codex
+build/
+dist/
+*.spec~
+merged.*
+packaging/app_icon.ico
+packaging/app_icon.icns

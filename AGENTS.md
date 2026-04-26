@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This repository is a compact Python image-overlay utility. The main application lives in `merge_logo_gui.py`; it contains argument parsing, image loading and SVG rasterization helpers, placement logic, the Tkinter selection dialog, the editor UI, and the CLI export path. There is no package directory, test directory, or bundled asset tree. User-supplied images are selected at runtime or passed with CLI flags. Treat `__pycache__/` as generated output and leave it out of reviews and commits.
+This repository is a compact Python image-overlay utility. The main application starts from `merge_logo_gui.py`; it contains argument parsing, Pillow image loading, placement logic, the PySide6 editor UI, and the CLI export path. User-supplied images are selected at runtime or passed with CLI flags. Treat `__pycache__/` as generated output and leave it out of reviews and commits.
 
 ## Build, Test, and Development Commands
 
@@ -11,7 +11,7 @@ This repository is a compact Python image-overlay utility. The main application 
 - `python3 -m py_compile merge_logo_gui.py` performs a quick syntax check.
 - `python3 -m pip install pillow` installs the required Pillow dependency when working in a fresh environment.
 
-SVG support may require a Chrome-compatible browser for transparent rasterization and ImageMagick's `convert` command as a fallback for difficult image formats.
+SVG import/export is intentionally unsupported; keep format support focused on common bitmap files.
 
 ## Coding Style & Naming Conventions
 
@@ -19,7 +19,7 @@ Use Python 3 style with 4-space indentation, type hints, and small helper functi
 
 ## Testing Guidelines
 
-There is no formal test framework in this snapshot. Before submitting changes, run `python3 -m py_compile merge_logo_gui.py` and at least one smoke export with known PNG or JPG inputs. For placement changes, test edge positions, oversized overlays, JPG output, and transparent PNG output. For SVG changes, test both a normal SVG and the missing-browser/error path where possible.
+There is no formal test framework in this snapshot. Before submitting changes, run `python3 -m py_compile merge_logo_gui.py` and at least one smoke export with known PNG or JPG inputs. For placement changes, test edge positions, oversized overlays, JPG output, and transparent PNG output.
 
 ## Commit & Pull Request Guidelines
 

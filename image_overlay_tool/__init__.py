@@ -2,6 +2,7 @@
 
 from .core import (
     Placement,
+    OverlayItem,
     PREFERRED_INPUT_SUFFIXES,
     SUPPORTED_OUTPUT_FORMATS,
     clamp_placement,
@@ -17,6 +18,7 @@ from .core import (
 
 __all__ = [
     "Placement",
+    "OverlayItem",
     "PREFERRED_INPUT_SUFFIXES",
     "SUPPORTED_OUTPUT_FORMATS",
     "clamp_placement",

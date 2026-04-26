@@ -34,4 +34,4 @@ Windows、macOS、Linux 需要分别在对应系统上构建。Windows 会得到
 
 如果要发布到 Release 页面，创建并推送 `v1.0.0` 这类 tag。GitHub Actions 会构建三平台压缩包并自动创建 Release。
 
-注意：现在支持导出 `svg`，这个 SVG 是把最终合成图以 PNG 数据嵌入 SVG 文件里，适合网页或排版软件引用；它不是把位图重新矢量化。
+注意：本工具不再支持 SVG 导入或导出，导出格式保留 PNG、JPG、WebP、BMP。

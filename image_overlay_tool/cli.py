@@ -8,6 +8,7 @@ from .core import (
     build_initial_placement,
     clamp_placement,
     export_image,
+    OverlayItem,
     load_rgba_image,
     resolve_input_path,
 )
@@ -97,10 +98,9 @@ def export_from_args(args: argparse.Namespace, language: str) -> int:
         )
         saved_path = export_image(
             base_image,
-            overlay_image,
-            overlay_path,
+            base_path,
+            [OverlayItem(image=overlay_image, path=overlay_path, placement=placement)],
             output_path,
-            placement,
             output_format=args.format,
         )
         print(get_text(language, "saved_stdout", path=saved_path))

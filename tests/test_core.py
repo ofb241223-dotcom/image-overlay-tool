@@ -5,15 +5,20 @@ import tempfile
 import unittest
 
 from PIL import Image
+from PIL import UnidentifiedImageError
 
 from image_overlay_tool.core import (
     Placement,
+    PREFERRED_INPUT_SUFFIXES,
+    SUPPORTED_OUTPUT_FORMATS,
     analyze_export_quality,
     clamp_placement,
     compose_image,
     export_image,
+    OverlayItem,
     get_transformed_overlay_size,
     load_rgba_image,
+    normalize_output_format,
     resolve_input_path,
     save_output_image,
 )
@@ -38,13 +43,30 @@ class CoreImageTests(unittest.TestCase):
         self.assertEqual(clamped.x, 0)
         self.assertEqual(clamped.y, 30)
 
+    def test_clamp_placement_preserves_extra_flags(self) -> None:
+        placement = Placement(
+            x=999,
+            y=999,
+            width=500,
+            opacity=0.4,
+            rotation=30,
+            blend_mode="multiply",
+            tile=True,
+            remove_white=True,
+        )
+        clamped = clamp_placement(placement, (100, 80), (40, 20))
+
+        self.assertEqual(clamped.blend_mode, "multiply")
+        self.assertTrue(clamped.tile)
+        self.assertTrue(clamped.remove_white)
+
     def test_compose_keeps_transparent_png_result(self) -> None:
         base = Image.new("RGBA", (8, 8), (0, 0, 0, 0))
         overlay = Image.new("RGBA", (4, 4), (10, 20, 30, 255))
         with tempfile.TemporaryDirectory() as tmpdir:
             overlay_path = Path(tmpdir) / "overlay.png"
             overlay.save(overlay_path)
-            merged = compose_image(base, overlay, overlay_path, Placement(x=2, y=3, width=4))
+            merged = compose_image(base, [OverlayItem(image=overlay, path=overlay_path, placement=Placement(x=2, y=3, width=4))])
 
         self.assertEqual(merged.getpixel((0, 0)), (0, 0, 0, 0))
         self.assertEqual(merged.getpixel((2, 3)), (10, 20, 30, 255))
@@ -60,18 +82,16 @@ class CoreImageTests(unittest.TestCase):
 
         self.assertEqual(pixel, (255, 255, 255))
 
-    def test_svg_export_embeds_png_preview(self) -> None:
-        image = Image.new("RGBA", (5, 7), (20, 40, 60, 128))
+    def test_svg_is_not_a_supported_input_or_output_format(self) -> None:
+        self.assertNotIn(".svg", PREFERRED_INPUT_SUFFIXES)
+        self.assertNotIn("svg", SUPPORTED_OUTPUT_FORMATS)
+        with self.assertRaises(ValueError):
+            normalize_output_format(Path("out.svg"), "svg")
         with tempfile.TemporaryDirectory() as tmpdir:
-            output_path = Path(tmpdir) / "out.svg"
-            saved_path = save_output_image(image, output_path, "svg")
-            svg = saved_path.read_text(encoding="utf-8")
-
-        self.assertEqual(saved_path.name, "out.svg")
-        self.assertIn("<svg", svg)
-        self.assertIn('width="5"', svg)
-        self.assertIn('height="7"', svg)
-        self.assertIn("data:image/png;base64,", svg)
+            svg_path = Path(tmpdir) / "logo.svg"
+            svg_path.write_text("<svg></svg>", encoding="utf-8")
+            with self.assertRaises(UnidentifiedImageError):
+                load_rgba_image(svg_path)
 
     def test_webp_export_is_lossless(self) -> None:
         image = Image.new("RGBA", (2, 1), (0, 0, 0, 0))
@@ -117,18 +137,14 @@ class CoreImageTests(unittest.TestCase):
         self.assertIn("bmp_lossless_no_transparency", bmp_report.messages)
         self.assertIn("white_background", bmp_report.messages)
 
-    def test_export_quality_reports_svg_and_resampling(self) -> None:
+    def test_export_quality_reports_resampling(self) -> None:
         report = analyze_export_quality(
-            "svg",
-            base_path=Path("base.png"),
-            overlay_path=Path("overlay.svg"),
+            "png",
             overlay_size=(20, 10),
             placement=Placement(x=0, y=0, width=12, rotation=5),
         )
 
         self.assertEqual(report.level, "warning")
-        self.assertIn("svg_embedded_raster", report.messages)
-        self.assertIn("svg_raster_inputs", report.messages)
         self.assertIn("resampled", report.messages)
 
     def test_rotation_changes_transformed_bounds(self) -> None:
@@ -143,12 +159,52 @@ class CoreImageTests(unittest.TestCase):
             overlay.save(overlay_path)
             merged = compose_image(
                 base,
-                overlay,
-                overlay_path,
-                Placement(x=1, y=1, width=4, opacity=0.5),
+                [OverlayItem(image=overlay, path=overlay_path, placement=Placement(x=1, y=1, width=4, opacity=0.5))],
             )
 
         self.assertTrue(120 <= merged.getpixel((1, 1))[3] <= 135)
+
+    def test_tile_mode_repeats_overlay_across_base(self) -> None:
+        base = Image.new("RGBA", (6, 6), (0, 0, 0, 0))
+        overlay = Image.new("RGBA", (2, 2), (0, 255, 0, 255))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            overlay_path = Path(tmpdir) / "tile.png"
+            overlay.save(overlay_path)
+            merged = compose_image(
+                base,
+                [OverlayItem(image=overlay, path=overlay_path, placement=Placement(x=0, y=0, width=2, tile=True))],
+            )
+
+        self.assertEqual(merged.getpixel((0, 0)), (0, 255, 0, 255))
+        self.assertEqual(merged.getpixel((5, 5)), (0, 255, 0, 255))
+
+    def test_remove_white_background_keeps_base_visible(self) -> None:
+        base = Image.new("RGBA", (3, 3), (0, 0, 255, 255))
+        overlay = Image.new("RGBA", (3, 3), (255, 255, 255, 255))
+        overlay.putpixel((1, 1), (0, 0, 0, 255))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            overlay_path = Path(tmpdir) / "logo.png"
+            overlay.save(overlay_path)
+            merged = compose_image(
+                base,
+                [OverlayItem(image=overlay, path=overlay_path, placement=Placement(x=0, y=0, width=3, remove_white=True))],
+            )
+
+        self.assertEqual(merged.getpixel((0, 0)), (0, 0, 255, 255))
+        self.assertEqual(merged.getpixel((1, 1)), (0, 0, 0, 255))
+
+    def test_blend_mode_survives_clamping_and_changes_result(self) -> None:
+        base = Image.new("RGBA", (2, 2), (100, 100, 100, 255))
+        overlay = Image.new("RGBA", (2, 2), (200, 50, 50, 255))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            overlay_path = Path(tmpdir) / "blend.png"
+            overlay.save(overlay_path)
+            merged = compose_image(
+                base,
+                [OverlayItem(image=overlay, path=overlay_path, placement=Placement(x=0, y=0, width=2, blend_mode="multiply"))],
+            )
+
+        self.assertEqual(merged.getpixel((0, 0)), (78, 19, 19, 255))
 
     def test_export_image_writes_requested_format(self) -> None:
         base = Image.new("RGBA", (8, 8), (255, 255, 255, 255))
@@ -166,10 +222,9 @@ class CoreImageTests(unittest.TestCase):
             try:
                 saved_path = export_image(
                     base_loaded,
-                    overlay_loaded,
-                    overlay_path,
+                    None,
+                    [OverlayItem(image=overlay_loaded, path=overlay_path, placement=Placement(x=2, y=2, width=4))],
                     output_path,
-                    Placement(x=2, y=2, width=4),
                     output_format="png",
                 )
             finally:

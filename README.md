@@ -1,14 +1,47 @@
-# Image Overlay Tool
+<p align="center">
+  <img src="packaging/app_icon.png" alt="Image Overlay Tool Logo" width="128">
+</p>
 
-一个跨平台桌面图片叠加工具，用于把单张叠加图放到底图上，调整位置、尺寸、透明度和旋转后导出。
+<h1 align="center">Image Overlay Tool</h1>
+
+<p align="center">
+  一个跨平台桌面图片叠加工具，用于把单张叠加图放到底图上，调整位置、尺寸、透明度和旋转后导出。
+</p>
+
+## 效果展示
+
+> 下面三张图先留作占位。你补充图片后，把文件放到 `docs/images/` 目录，并保持这些文件名即可。
+
+### 原图
+
+![原图占位](docs/images/base.png)
+
+### 叠加图
+
+![叠加图占位](docs/images/overlay.png)
+
+### 合并图
+
+![合并图占位](docs/images/merged.png)
 
 ## 功能
 
 - 支持 PNG、JPG、WebP、BMP、SVG 等常见图片输入；SVG 会在导入时渲染为位图参与合成。
-- 支持拖放导入、最近文件、撤销、重置和导出提示。
+- 支持导入图片、图层选择、撤销、重置和导出提示。
+- 支持在画布中拖动叠加图、拖动右下角改变大小、拖动上方手柄旋转。
+- 支持透明度、宽度、位置、旋转角度的滑块和数字输入。
 - 支持导出 PNG、JPG、WebP、BMP。
 - 导出检查会提示当前格式是否有损、是否保留透明。
 - 默认中文界面，可切换英文。
+
+## 下载安装
+
+在 Release 页面下载对应系统的安装包：
+
+- Windows：下载 `Image-Overlay-Tool-Windows.exe` 后双击运行。
+- macOS：下载 `Image-Overlay-Tool-macOS.dmg` 后打开运行。
+- Ubuntu/Debian：下载 `Image-Overlay-Tool-Linux.deb` 安装。
+- Fedora/RHEL/openSUSE：下载 `Image-Overlay-Tool-Linux.rpm` 安装。
 
 ## 本地运行
 
@@ -34,7 +67,7 @@ python3 packaging/prepare_icons.py
 pyinstaller packaging/image_overlay_tool.spec
 ```
 
-Windows、macOS、Linux 需要分别在对应系统上构建。仓库内的 GitHub Actions 会在三种系统上自动构建；推送 `v1.0.0` 这类 tag 时，会自动创建 Release 并上传三平台压缩包。
+GitHub Actions 会在 Windows、macOS、Linux 上自动构建。推送 `v1.0.4` 这类 tag 时，会自动创建 Release 并上传 `.exe`、`.dmg`、`.deb`、`.rpm`。
 
 ## 说明
 

@@ -5,7 +5,6 @@ import tempfile
 import unittest
 
 from PIL import Image
-from PIL import UnidentifiedImageError
 
 from image_overlay_tool.core import (
     Placement,
@@ -16,6 +15,7 @@ from image_overlay_tool.core import (
     compose_image,
     export_image,
     OverlayItem,
+    get_svg_intrinsic_size,
     get_transformed_overlay_size,
     load_rgba_image,
     normalize_output_format,
@@ -82,16 +82,35 @@ class CoreImageTests(unittest.TestCase):
 
         self.assertEqual(pixel, (255, 255, 255))
 
-    def test_svg_is_not_a_supported_input_or_output_format(self) -> None:
-        self.assertNotIn(".svg", PREFERRED_INPUT_SUFFIXES)
+    def test_svg_is_supported_input_but_not_output_format(self) -> None:
+        self.assertIn(".svg", PREFERRED_INPUT_SUFFIXES)
         self.assertNotIn("svg", SUPPORTED_OUTPUT_FORMATS)
         with self.assertRaises(ValueError):
             normalize_output_format(Path("out.svg"), "svg")
+
+    def test_svg_intrinsic_size_uses_viewbox(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             svg_path = Path(tmpdir) / "logo.svg"
-            svg_path.write_text("<svg></svg>", encoding="utf-8")
-            with self.assertRaises(UnidentifiedImageError):
-                load_rgba_image(svg_path)
+            svg_path.write_text(
+                '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 210 49"></svg>',
+                encoding="utf-8",
+            )
+
+            size = get_svg_intrinsic_size(svg_path)
+
+        self.assertEqual(size, (210, 49))
+
+    def test_svg_intrinsic_size_ignores_percentage_dimensions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            svg_path = Path(tmpdir) / "logo.svg"
+            svg_path.write_text(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 210 49"></svg>',
+                encoding="utf-8",
+            )
+
+            size = get_svg_intrinsic_size(svg_path)
+
+        self.assertEqual(size, (210, 49))
 
     def test_webp_export_is_lossless(self) -> None:
         image = Image.new("RGBA", (2, 1), (0, 0, 0, 0))

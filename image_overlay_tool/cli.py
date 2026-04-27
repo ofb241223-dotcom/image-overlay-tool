@@ -112,10 +112,10 @@ def export_from_args(args: argparse.Namespace, language: str) -> int:
 
 def run_gui(args: argparse.Namespace, language: str) -> int:
     try:
-        from .gui_qt import run_app
+        from .gui_tk import run_app
     except ModuleNotFoundError as exc:
-        if exc.name == "PySide6":
-            raise SystemExit(get_text(language, "gui_missing_pyside6"))
+        if exc.name in ("tkinter", "customtkinter"):
+            raise SystemExit(get_text(language, "gui_missing_tkinter"))
         raise
 
     return run_app(args, language)

@@ -1,12 +1,6 @@
 # 打包说明
 
-本项目使用本地虚拟环境安装依赖，不需要改系统 Python。
-
-Linux/X11 下 PySide6 还需要系统库 `libxcb-cursor0`。如果启动时看到 `Could not load the Qt platform plugin "xcb"` 或 `libxcb-cursor.so.0 => not found`，先运行：
-
-```bash
-sudo apt install -y libxcb-cursor0
-```
+本项目使用本地虚拟环境安装依赖，不需要改系统 Python。桌面界面基于 CustomTkinter，打包时不再需要 Qt 的 XCB 插件依赖。
 
 ```bash
 python3 -m venv .venv
@@ -34,4 +28,4 @@ Windows、macOS、Linux 需要分别在对应系统上构建。Windows 会得到
 
 如果要发布到 Release 页面，创建并推送 `v1.0.0` 这类 tag。GitHub Actions 会构建三平台压缩包并自动创建 Release。
 
-注意：本工具不再支持 SVG 导入或导出，导出格式保留 PNG、JPG、WebP、BMP。
+注意：本工具支持 SVG 导入作为素材，但不支持 SVG 导出，导出格式保留 PNG、JPG、WebP、BMP。

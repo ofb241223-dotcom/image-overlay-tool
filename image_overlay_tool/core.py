@@ -1,8 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
+from io import BytesIO
 import math
 from pathlib import Path
+import re
+import shutil
+import subprocess
+import tempfile
+from xml.etree import ElementTree
 
 from PIL import Image, ImageChops, ImageOps, UnidentifiedImageError
 
@@ -66,6 +73,7 @@ class ExportQualityReport:
 
 PREFERRED_INPUT_SUFFIXES = (
     ".png",
+    ".svg",
     ".webp",
     ".avif",
     ".jpg",
@@ -78,6 +86,209 @@ PREFERRED_INPUT_SUFFIXES = (
 
 SUPPORTED_OUTPUT_FORMATS = ("png", "jpg", "jpeg", "webp", "bmp")
 JPEG_OUTPUT_FORMATS = {"jpg", "jpeg"}
+DEFAULT_SVG_SIZE = (1024, 1024)
+
+
+def is_svg(path: Path) -> bool:
+    return path.suffix.lower() == ".svg"
+
+
+def _parse_svg_length(value: str | None) -> float | None:
+    if not value:
+        return None
+    if "%" in value:
+        return None
+    match = re.match(r"^\s*([0-9]+(?:\.[0-9]+)?)", value)
+    if not match:
+        return None
+    parsed = float(match.group(1))
+    return parsed if parsed > 0 else None
+
+
+def get_svg_intrinsic_size(path: Path) -> tuple[int, int]:
+    try:
+        root = ElementTree.parse(path).getroot()
+    except ElementTree.ParseError as exc:
+        raise UnidentifiedImageError(f"Invalid SVG file: {path}") from exc
+
+    width = _parse_svg_length(root.get("width"))
+    height = _parse_svg_length(root.get("height"))
+    if width and height:
+        return max(1, round(width)), max(1, round(height))
+
+    view_box = root.get("viewBox") or root.get("viewbox")
+    if view_box:
+        parts = re.split(r"[\s,]+", view_box.strip())
+        if len(parts) == 4:
+            try:
+                view_width = float(parts[2])
+                view_height = float(parts[3])
+            except ValueError:
+                view_width = view_height = 0
+            if view_width > 0 and view_height > 0:
+                return max(1, round(view_width)), max(1, round(view_height))
+
+    return DEFAULT_SVG_SIZE
+
+
+def get_chrome_binary() -> str | None:
+    for candidate in ("google-chrome", "chrome", "chromium-browser", "chromium"):
+        resolved = shutil.which(candidate)
+        if resolved:
+            return resolved
+    return None
+
+
+def get_imagemagick_command() -> list[str] | None:
+    magick = shutil.which("magick")
+    if magick:
+        return [magick]
+    convert = shutil.which("convert")
+    if convert:
+        return [convert]
+    return None
+
+
+def _render_svg_flat_with_chrome(
+    path: Path, target_size: tuple[int, int], background_hex: str
+) -> Image.Image:
+    chrome_binary = get_chrome_binary()
+    if chrome_binary is None:
+        raise RuntimeError(
+            f"{path.name} requires Chrome/Chromium or ImageMagick for SVG import."
+        )
+
+    width, height = target_size
+    viewport_width = max(width, 64)
+    viewport_height = max(height, 64)
+    file_url = path.resolve().as_uri()
+    html = (
+        "<!doctype html><html><head><meta charset='utf-8'>"
+        f"<style>html,body{{margin:0;padding:0;background:{background_hex};overflow:hidden;}}"
+        f"img{{display:block;width:{width}px;height:{height}px;}}</style>"
+        f"</head><body><img src=\"{file_url}\" alt=\"svg\"></body></html>"
+    )
+
+    with tempfile.TemporaryDirectory(prefix="svg-render-") as tmpdir:
+        tmpdir_path = Path(tmpdir)
+        html_path = tmpdir_path / "render.html"
+        png_path = tmpdir_path / "render.png"
+        html_path.write_text(html, encoding="utf-8")
+        command = [
+            chrome_binary,
+            "--headless",
+            "--disable-gpu",
+            "--allow-file-access-from-files",
+            "--hide-scrollbars",
+            "--force-device-scale-factor=1",
+            f"--window-size={viewport_width},{viewport_height}",
+            f"--screenshot={png_path}",
+            html_path.resolve().as_uri(),
+        ]
+        result = subprocess.run(command, capture_output=True, check=False)
+        if result.returncode != 0:
+            error = result.stderr.decode("utf-8", errors="replace").strip()
+            raise RuntimeError(f"Failed to render SVG with Chrome: {error or 'unknown error'}")
+        with Image.open(png_path) as source_image:
+            image = source_image.convert("RGBA").crop((0, 0, width, height))
+            image.load()
+        return image
+
+
+def _reconstruct_transparent_image(black_image: Image.Image, white_image: Image.Image) -> Image.Image:
+    black_rgb = black_image.convert("RGB")
+    white_rgb = white_image.convert("RGB")
+    output = Image.new("RGBA", black_rgb.size)
+
+    for y in range(black_rgb.height):
+        for x in range(black_rgb.width):
+            rb, gb, bb = black_rgb.getpixel((x, y))
+            rw, gw, bw = white_rgb.getpixel((x, y))
+            alpha = max(0, min(255, round((255 - (rw - rb) + 255 - (gw - gb) + 255 - (bw - bb)) / 3)))
+            if alpha == 0:
+                output.putpixel((x, y), (0, 0, 0, 0))
+                continue
+            output.putpixel(
+                (x, y),
+                (
+                    max(0, min(255, round(rb * 255 / alpha))),
+                    max(0, min(255, round(gb * 255 / alpha))),
+                    max(0, min(255, round(bb * 255 / alpha))),
+                    alpha,
+                ),
+            )
+    return output
+
+
+def rasterize_svg_with_chrome(path: Path, target_size: tuple[int, int]) -> Image.Image:
+    black_image = _render_svg_flat_with_chrome(path, target_size, "#000000")
+    white_image = _render_svg_flat_with_chrome(path, target_size, "#ffffff")
+    try:
+        return _reconstruct_transparent_image(black_image, white_image)
+    finally:
+        black_image.close()
+        white_image.close()
+
+
+def rasterize_svg_with_imagemagick(path: Path, target_size: tuple[int, int]) -> Image.Image:
+    command_prefix = get_imagemagick_command()
+    if command_prefix is None:
+        raise RuntimeError(
+            f"{path.name} requires Chrome/Chromium or ImageMagick for SVG import."
+        )
+
+    command = [
+        *command_prefix,
+        str(path),
+        "-background",
+        "none",
+        "-resize",
+        f"{target_size[0]}x{target_size[1]}!",
+        "png:-",
+    ]
+    result = subprocess.run(command, capture_output=True, check=False)
+    if result.returncode != 0:
+        error = result.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"Failed to render SVG with ImageMagick: {error or 'unknown error'}")
+
+    with Image.open(BytesIO(result.stdout)) as source_image:
+        image = source_image.convert("RGBA")
+        image.load()
+    return image
+
+
+@lru_cache(maxsize=64)
+def _rasterize_svg_cached(path_str: str, mtime_ns: int, width: int, height: int) -> bytes:
+    path = Path(path_str)
+    target_size = (width, height)
+    try:
+        image = rasterize_svg_with_imagemagick(path, target_size)
+    except RuntimeError as imagemagick_error:
+        try:
+            image = rasterize_svg_with_chrome(path, target_size)
+        except RuntimeError as chrome_error:
+            raise RuntimeError(
+                f"Cannot import SVG '{path.name}'. ImageMagick error: {imagemagick_error}. "
+                f"Chrome/Chromium error: {chrome_error}."
+            ) from chrome_error
+
+    buffer = BytesIO()
+    try:
+        image.save(buffer, format="PNG")
+        return buffer.getvalue()
+    finally:
+        image.close()
+
+
+def rasterize_svg(path: Path, target_size: tuple[int, int] | None = None) -> Image.Image:
+    resolved_path = path.resolve()
+    width, height = target_size or get_svg_intrinsic_size(resolved_path)
+    stat = resolved_path.stat()
+    png_bytes = _rasterize_svg_cached(str(resolved_path), stat.st_mtime_ns, width, height)
+    with Image.open(BytesIO(png_bytes)) as source_image:
+        image = source_image.convert("RGBA")
+        image.load()
+    return image
 
 
 def sort_input_matches(paths: list[Path]) -> list[Path]:
@@ -144,6 +355,9 @@ def load_rgba_image(path: Path, target_size: tuple[int, int] | None = None) -> I
     if path.suffix.lower() not in PREFERRED_INPUT_SUFFIXES:
         raise UnidentifiedImageError(f"Unsupported image format: {path.suffix or path.name}")
 
+    if is_svg(path):
+        return rasterize_svg(path, target_size)
+
     with Image.open(path) as source_image:
         image = source_image.convert("RGBA")
         image.load()
@@ -156,6 +370,8 @@ def load_rgba_image(path: Path, target_size: tuple[int, int] | None = None) -> I
 def render_image_at_size(
     path: Path, source_image: Image.Image, target_size: tuple[int, int]
 ) -> Image.Image:
+    if is_svg(path):
+        return rasterize_svg(path, target_size)
     if source_image.size == target_size:
         return source_image.copy()
     return source_image.resize(target_size, RESAMPLE)

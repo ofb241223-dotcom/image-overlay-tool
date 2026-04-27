@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import tkinter as tk
 from tkinter import filedialog, messagebox
 import customtkinter as ctk
@@ -90,6 +91,9 @@ class PreviewCanvas(tk.Canvas):
         self._drag_start_pan_y = 0
         self._drag_start_placement = None
         self._drag_layer_idx = -1
+        self._drag_start_angle = 0.0
+        self._drag_start_center_x = 0.0
+        self._drag_start_center_y = 0.0
         
         self.bind("<Configure>", lambda e: self.update_view())
         self.bind("<ButtonPress-1>", self.on_press)
@@ -198,6 +202,9 @@ class PreviewCanvas(tk.Canvas):
                 self.create_rectangle(ox, oy, ox+ow, oy+oh, outline="cyan", width=2)
                 hx, hy, hw, hh = self._get_handle_rect()
                 self.create_rectangle(hx, hy, hx+hw, hy+hh, fill="cyan", outline="cyan")
+                rx, ry, rr = self._get_rotate_handle()
+                self.create_line(ox + ow / 2, oy, rx, ry, fill="#f97316", width=2)
+                self.create_oval(rx-rr, ry-rr, rx+rr, ry+rr, fill="#f97316", outline="#ea580c", width=2)
 
     def _get_handle_rect(self):
         rect = self._get_overlay_rect(self.active_layer_idx)
@@ -205,6 +212,18 @@ class PreviewCanvas(tk.Canvas):
         ox, oy, ow, oh = rect
         h_size = max(10, min(18, min(ow, oh) / 3))
         return ox+ow-h_size, oy+oh-h_size, h_size, h_size
+
+    def _get_rotate_handle(self):
+        rect = self._get_overlay_rect(self.active_layer_idx)
+        if not rect:
+            return 0, 0, 0
+        ox, oy, ow, oh = rect
+        radius = max(7, min(11, min(ow, oh) / 4))
+        return ox + ow / 2, oy - max(24, radius * 3), radius
+
+    def _event_angle_from_center(self, x, y):
+        center_x, center_y = self._drag_start_center_x, self._drag_start_center_y
+        return math.degrees(math.atan2(y - center_y, x - center_x))
 
     def _hit_test(self, x, y):
         for i in range(len(self.overlays)-1, -1, -1):
@@ -218,9 +237,13 @@ class PreviewCanvas(tk.Canvas):
     def on_press(self, event):
         x, y = event.x, event.y
         hx, hy, hw, hh = self._get_handle_rect()
+        rx, ry, rr = self._get_rotate_handle()
         hit = self._hit_test(x, y)
 
-        if hx <= x <= hx+hw and hy <= y <= hy+hh:
+        if rr > 0 and (x - rx) ** 2 + (y - ry) ** 2 <= rr ** 2:
+            self._drag_mode = "rotate"
+            hit = self.active_layer_idx
+        elif hx <= x <= hx+hw and hy <= y <= hy+hh:
             self._drag_mode = "resize"
             hit = self.active_layer_idx
         elif hit is not None:
@@ -237,6 +260,12 @@ class PreviewCanvas(tk.Canvas):
         self._drag_start_y = y
         self._drag_layer_idx = hit
         self._drag_start_placement = self.overlays[hit].placement
+        rect = self._get_overlay_rect(hit)
+        if rect:
+            ox, oy, ow, oh = rect
+            self._drag_start_center_x = ox + ow / 2
+            self._drag_start_center_y = oy + oh / 2
+            self._drag_start_angle = self._event_angle_from_center(x, y)
 
     def on_drag(self, event):
         if not self._drag_mode or not self._drag_start_placement: return
@@ -247,9 +276,28 @@ class PreviewCanvas(tk.Canvas):
         start = self._drag_start_placement
         if self._drag_mode == "move":
             new_p = replace(start, x=int(start.x + dx), y=int(start.y + dy))
-        else:
+        elif self._drag_mode == "resize":
             growth = dx if abs(dx) >= abs(dy) else dy
             new_p = replace(start, width=max(1, int(start.width + growth)))
+        else:
+            current_angle = self._event_angle_from_center(event.x, event.y)
+            rotation = start.rotation + current_angle - self._drag_start_angle
+            center_x = self._drag_start_center_x
+            center_y = self._drag_start_center_y
+            ix, iy, _, _ = self._get_image_rect()
+            center_image_x = (center_x - ix) / scale
+            center_image_y = (center_y - iy) / scale
+            overlay_w, overlay_h = get_transformed_overlay_size(
+                start.width,
+                self.overlays[self._drag_layer_idx].image.size,
+                rotation,
+            )
+            new_p = replace(
+                start,
+                x=int(round(center_image_x - overlay_w / 2)),
+                y=int(round(center_image_y - overlay_h / 2)),
+                rotation=rotation,
+            )
             
         self.on_placement_changed(self._drag_layer_idx, new_p)
 
@@ -497,8 +545,8 @@ class OverlayMainWindow(ctk.CTk):
             lbl.pack(side="left")
             setattr(self, f"lbl_{label_key}", lbl)
             var = tk.StringVar(value="0")
-            entry = ctk.CTkEntry(row, textvariable=var, font=FONT_CONTROL, height=36)
-            entry.pack(side="right", fill="x", expand=True, padx=(8, 0))
+            entry = ctk.CTkEntry(row, textvariable=var, font=FONT_CONTROL, height=36, width=76)
+            entry.pack(side="right", padx=(8, 0))
             slider = ctk.CTkSlider(row, from_=from_, to=to_, command=lambda value, v=var: v.set(str(round(value, 1) if isinstance(value, float) and not value.is_integer() else int(value))))
             slider.pack(side="right", fill="x", expand=True)
             var.trace_add("write", lambda *a: self._on_prop_change())

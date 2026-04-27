@@ -43,34 +43,100 @@ jobs:
       - name: 准备应用图标
         run: python packaging/prepare_icons.py
 
-      - name: 打包应用
-        run: pyinstaller packaging/image_overlay_tool.spec --noconfirm
-
-      - name: 打包 Linux 产物
-        if: runner.os == 'Linux'
-        run: |
-          mkdir -p release
-          cd dist
-          zip -r ../release/Image-Overlay-Tool-Linux.zip "Image Overlay Tool"
-
-      - name: 打包 Windows 产物
+      - name: 打包 Windows 单文件
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          pyinstaller merge_logo_gui.py --name "Image Overlay Tool" --onefile --windowed --icon packaging/app_icon.ico --noconfirm
           New-Item -ItemType Directory -Force release | Out-Null
-          Compress-Archive -Path 'dist/Image Overlay Tool' -DestinationPath 'release/Image-Overlay-Tool-Windows.zip' -Force
+          Copy-Item 'dist/Image Overlay Tool.exe' 'release/Image-Overlay-Tool-Windows.exe'
 
-      - name: 打包 macOS 产物
+      - name: 打包应用目录
+        if: runner.os != 'Windows'
+        run: pyinstaller packaging/image_overlay_tool.spec --noconfirm
+
+      - name: 打包 Linux 安装包
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          if [ "$version" = "$GITHUB_REF_NAME" ]; then
+            version="0.1.${GITHUB_RUN_NUMBER}"
+          fi
+          mkdir -p release
+          mkdir -p package-root/DEBIAN
+          mkdir -p package-root/opt/image-overlay-tool
+          mkdir -p package-root/usr/share/applications
+          mkdir -p package-root/usr/share/icons/hicolor/256x256/apps
+          cp -a "dist/Image Overlay Tool/." package-root/opt/image-overlay-tool/
+          cp packaging/app_icon.png package-root/usr/share/icons/hicolor/256x256/apps/image-overlay-tool.png
+          cat > package-root/usr/share/applications/image-overlay-tool.desktop <<'EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=Image Overlay Tool
+          Name[zh_CN]=图片叠加工具
+          Exec="/opt/image-overlay-tool/Image Overlay Tool"
+          Icon=image-overlay-tool
+          Terminal=false
+          Categories=Graphics;Photography;
+          EOF
+          cat > package-root/DEBIAN/control <<EOF
+          Package: image-overlay-tool
+          Version: ${version}
+          Section: graphics
+          Priority: optional
+          Architecture: amd64
+          Maintainer: ofb241223-dotcom
+          Description: Desktop image overlay utility
+          EOF
+          dpkg-deb --build package-root release/Image-Overlay-Tool-Linux.deb
+          sudo apt-get update
+          sudo apt-get install -y rpm
+          mkdir -p rpmroot/BUILD rpmroot/RPMS rpmroot/SOURCES rpmroot/SPECS rpmroot/SRPMS
+          tar -C package-root -czf rpmroot/SOURCES/image-overlay-tool-${version}.tar.gz opt usr
+          cat > rpmroot/SPECS/image-overlay-tool.spec <<EOF
+          Name: image-overlay-tool
+          Version: ${version}
+          Release: 1
+          Summary: Desktop image overlay utility
+          License: MIT
+          Source0: image-overlay-tool-${version}.tar.gz
+          BuildArch: x86_64
+
+          %description
+          Desktop image overlay utility.
+
+          %prep
+          %setup -q -c -T
+          tar -xzf %{SOURCE0}
+
+          %install
+          mkdir -p %{buildroot}
+          cp -a opt usr %{buildroot}/
+
+          %files
+          /opt/image-overlay-tool
+          /usr/share/applications/image-overlay-tool.desktop
+          /usr/share/icons/hicolor/256x256/apps/image-overlay-tool.png
+          EOF
+          rpmbuild --define "_topdir $(pwd)/rpmroot" -bb rpmroot/SPECS/image-overlay-tool.spec
+          cp rpmroot/RPMS/x86_64/image-overlay-tool-${version}-1.x86_64.rpm release/Image-Overlay-Tool-Linux.rpm
+
+      - name: 打包 macOS DMG
         if: runner.os == 'macOS'
         run: |
           mkdir -p release
-          ditto -c -k --keepParent "dist/Image Overlay Tool.app" release/Image-Overlay-Tool-macOS.zip
+          hdiutil create -volname "Image Overlay Tool" -srcfolder "dist/Image Overlay Tool.app" -ov -format UDZO release/Image-Overlay-Tool-macOS.dmg
 
       - name: 上传构建附件
         uses: actions/upload-artifact@v4
         with:
           name: 图片叠加工具-${{ matrix.os }}
-          path: release/*.zip
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.deb
+            release/*.rpm
           if-no-files-found: error
 
   release:
@@ -91,10 +157,10 @@ jobs:
 
       - name: 检查 Release 附件
         run: |
-          find release-assets -name '*.zip' -type f -print
-          count=$(find release-assets -name '*.zip' -type f | wc -l)
-          if [ "$count" -lt 3 ]; then
-            echo "三平台构建产物不完整，当前只找到 $count 个 zip。"
+          find release-assets -type f -print
+          count=$(find release-assets -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.deb' -o -name '*.rpm' \) | wc -l)
+          if [ "$count" -lt 4 ]; then
+            echo "安装包产物不完整，当前只找到 $count 个。"
             exit 1
           fi
 
@@ -102,6 +168,15 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ github.ref_name }}
-          body: 三平台桌面版构建产物。
-          files: release-assets/*.zip
+          body: |
+            三平台桌面版构建产物。
+
+            Windows：下载 exe 后双击运行。
+            macOS：下载 dmg 后打开并运行 app。
+            Linux：Ubuntu/Debian 使用 deb，Fedora/RHEL/openSUSE 使用 rpm。
+          files: |
+            release-assets/*.exe
+            release-assets/*.dmg
+            release-assets/*.deb
+            release-assets/*.rpm
           fail_on_unmatched_files: true

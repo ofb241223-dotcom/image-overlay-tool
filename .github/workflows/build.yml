@@ -95,4 +95,11 @@ jobs:
           while IFS= read -r -d '' file; do
             files+=("$file")
           done < <(find release-assets -name '*.zip' -print0)
-          gh release create "$GITHUB_REF_NAME" "${files[@]}" --title "$GITHUB_REF_NAME" --notes "三平台桌面版构建产物。"
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "没有找到可上传的 zip 构建产物。"
+            exit 1
+          fi
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes "三平台桌面版构建产物。"
+          fi
+          gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber

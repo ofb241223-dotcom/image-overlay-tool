@@ -64,20 +64,20 @@ exe = EXE(
     icon=icon_path,
 )
 
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name="Image Overlay Tool",
+)
+
 if sys.platform == "darwin":
     app = BUNDLE(
-        exe,
+        coll,
         name="Image Overlay Tool.app",
         icon=icon_path,
         bundle_identifier="local.image-overlay-tool",
-    )
-else:
-    coll = COLLECT(
-        exe,
-        a.binaries,
-        a.datas,
-        strip=False,
-        upx=True,
-        upx_exclude=[],
-        name="Image Overlay Tool",
     )

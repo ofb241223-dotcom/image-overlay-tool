@@ -8,6 +8,35 @@ from pathlib import Path
 import os
 import sys
 
+
+def _append_qt_logging_rule(rule: str) -> None:
+    current = os.environ.get("QT_LOGGING_RULES", "").strip()
+    rules = [item.strip() for item in current.split(";") if item.strip()]
+    if rule not in rules:
+        rules.append(rule)
+    os.environ["QT_LOGGING_RULES"] = ";".join(rules)
+
+
+def prepare_qt_environment() -> None:
+    gtk_modules = os.environ.get("GTK_MODULES", "")
+    if gtk_modules:
+        modules = [
+            module
+            for module in gtk_modules.split(":")
+            if module and module != "xapp-gtk3-module"
+        ]
+        if modules:
+            os.environ["GTK_MODULES"] = ":".join(modules)
+        else:
+            os.environ.pop("GTK_MODULES", None)
+    os.environ.setdefault("QT_STYLE_OVERRIDE", "Fusion")
+    os.environ.setdefault("QT_QPA_PLATFORMTHEME", "generic")
+    os.environ.setdefault("NO_AT_BRIDGE", "1")
+    _append_qt_logging_rule("qt.accessibility.atspi=false")
+
+
+prepare_qt_environment()
+
 from PIL import Image
 from PySide6.QtCore import QObject, QSettings, Qt, QRectF, Signal, QThread, QTimer, QPointF
 from PySide6.QtGui import QAction, QColor, QDragEnterEvent, QDropEvent, QKeySequence, QMouseEvent, QPainter, QPen, QPixmap
@@ -60,15 +89,6 @@ from .i18n import LANGUAGE_NAMES, get_text
 
 RECENT_LIMIT = 12
 PREVIEW_MAX_PIXMAP_SIDE = 4096
-
-
-def prepare_qt_environment() -> None:
-    gtk_modules = os.environ.get("GTK_MODULES", "")
-    if gtk_modules:
-        modules = [module for module in gtk_modules.split(":") if module and module != "xapp-gtk3-module"]
-        if len(modules) != len([module for module in gtk_modules.split(":") if module]):
-            os.environ["GTK_MODULES"] = ":".join(modules)
-    os.environ.setdefault("QT_STYLE_OVERRIDE", "Fusion")
 
 
 def get_project_dir() -> Path:

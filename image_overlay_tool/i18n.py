@@ -105,6 +105,7 @@ TEXTS = {
         "saved_stdout": "合并后的图片已保存到 {path}",
         "gui_open_error": "无法打开图形界面（{error}）。如果只想直接导出，请使用 --save-immediately。",
         "gui_missing_tkinter": "缺少 tkinter 或 customtkinter，无法启动桌面界面。请先安装依赖：python3 -m pip install -r requirements.txt；如果仍提示 tkinter 缺失，请安装系统包：sudo apt install python3-tk",
+        "gui_missing_qt": "缺少 PySide6，无法启动 Qt 桌面界面。请先在本项目虚拟环境安装依赖：python3 -m pip install -r requirements.txt",
         "cli_missing_inputs": "命令行直接导出时，必须同时提供 --base 和 --overlay。",
     },
     "en": {
@@ -203,6 +204,7 @@ TEXTS = {
         "saved_stdout": "Saved merged image to {path}",
         "gui_open_error": "Unable to open the GUI ({error}). If you only need an export, use --save-immediately.",
         "gui_missing_tkinter": "tkinter or customtkinter is missing. Install dependencies with: python3 -m pip install -r requirements.txt. If tkinter is still missing, install the system package: sudo apt install python3-tk",
+        "gui_missing_qt": "PySide6 is missing, so the Qt desktop UI cannot start. Install project dependencies first: python3 -m pip install -r requirements.txt",
         "cli_missing_inputs": "For command-line export, you must provide both --base and --overlay.",
     },
 }

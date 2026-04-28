@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - master
+      - qt-experiment
     tags:
       - "v*"
   workflow_dispatch:
@@ -86,6 +87,7 @@ jobs:
           Section: graphics
           Priority: optional
           Architecture: amd64
+          Depends: libxcb-cursor0
           Maintainer: ofb241223-dotcom
           Description: Desktop image overlay utility
           EOF
@@ -102,6 +104,7 @@ jobs:
           License: MIT
           Source0: image-overlay-tool-${version}.tar.gz
           BuildArch: x86_64
+          Requires: xcb-util-cursor
 
           %description
           Desktop image overlay utility.

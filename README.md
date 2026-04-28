@@ -65,8 +65,6 @@ python3 packaging/prepare_icons.py
 pyinstaller packaging/image_overlay_tool.spec
 ```
 
-GitHub Actions 会在 Windows、macOS、Linux 上自动构建。推送 `v1.0.4` 这类 tag 时，会自动创建 Release 并上传 `.exe`、`.dmg`、`.deb`、`.rpm`。
-
 ## 说明
 
 PNG 和无损 WebP 会保留透明；JPG 会有损压缩并铺白底。SVG 支持导入作为素材，但不支持导出为 SVG。
